@@ -1,0 +1,99 @@
+﻿@page "/"
+@using BlazorBitcoinApp.DTOs
+@using Plotly.Blazor
+@using Plotly.Blazor.Traces
+
+@inject Services.IBitcoinService BitcoinService;
+
+<PageTitle>Blazor Bitcoin</PageTitle>
+
+<h1>Valor de fechamento BITCOIN por dia</h1>
+
+<div class="form-group">
+    <label for="dayFilter">Data Inicial</label>
+    <input id="dayFilter" type="date" class="form-control" value="@StartDate.ToString("yyyy-MM-dd")"
+        min="@DateTime.Now.AddMonths(-1).ToString("yyyy-MM-dd")" max="@DateTime.Now.ToString("yyyy-MM-dd")"
+        @onchange="@(async (e) => await ChangeDay(DateTime.Parse(e.Value.ToString())))" />
+</div>
+
+@if(forecasts == null || forecasts.Count == 0)
+{
+    <p><b>Carregando...</b></p>
+}
+else
+{
+    <div style="margin: 10px">
+        <PlotlyChart style="height: 30%;" @bind-Config="config" @bind-bind-Layout="layout" @bind-Data="data" @ref="chart" /> 
+    </div>
+}
+
+@code {
+    private List<BitcoinDataDTO> forecasts;
+    private DateTime StartDate;
+
+    PlotlyChart chart;
+    Config config = new Config()
+    {
+        Responsive = true
+    };
+
+    Layout layout;
+    decimal yAxisMax;
+    IList<ITrace> data = new List<ITrace>();
+
+    private async Task LoadChartData()
+    {
+        if(forecasts.Count() > 0)
+        {
+            var currentCloseValueMax = (decimal)forecasts.Max(f => f.CloseValue);
+            if (currentCloseValueMax > yAxisMax)
+                yAxisMax = Convert.ToInt64(currentCloseValueMax + (currentCloseValueMax * 0.3m));
+        }
+
+        data = new List<ITrace>
+        {
+            new Scatter
+            {
+                Name = "ScatterTrace",
+                Mode = Plotly.Blazor.Traces.ScatterLib.ModeFlag.Lines | Plotly.Blazor.Traces.ScatterLib.ModeFlag.Markers,
+                XAxis = "Dia",
+                YAxis = "Fechamento",
+                X = forecasts.Select(f => (object)f.Day.ToString("dd/MM/yyyy")).ToList(),
+                Y = forecasts.Select(f => (object)f.CloseValue).ToList()
+            }
+        };
+
+        layout = new Layout
+        {
+            Margin = new Plotly.Blazor.LayoutLib.Margin()
+            {
+                Pad = 10
+            },
+            YAxis = new List<Plotly.Blazor.LayoutLib.YAxis>()
+            {
+                new Plotly.Blazor.LayoutLib.YAxis()
+                {
+                    Range = new List<object> { 0, yAxisMax },
+                }
+            }
+        };
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        yAxisMax = 60000;
+        StartDate = DateTime.Now.AddDays(-7);
+        forecasts = await BitcoinService.FindBy(StartDate);
+        await LoadChartData();
+    }
+
+    private async Task ChangeDay(DateTime startDate)
+    {
+        StartDate = startDate;
+        forecasts = await BitcoinService.FindBy(StartDate);
+        await LoadChartData();
+        await chart.React();
+    }
+}
+
